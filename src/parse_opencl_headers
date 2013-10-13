@@ -1,0 +1,91 @@
+#!/usr/bin/ruby
+
+DataType = Struct.new(:name, # name of the type
+		      :origin, # defined where
+		      :mapsto, # for typedefs
+		      :comment, # comments at define time
+		      :size, # size, in bytes, of the data type
+		      :align, # alignment of the data type
+		      :vector, # if vector type, number of components
+		      :struct, # if struct, hash of member names => member types
+		      :values, # hash of defined values it can take (name => [value, comment])
+		     )
+
+$types = {}
+
+def create_type(name, *args)
+	n = name.to_sym
+	raise "redefining type #{n}" if $types.key? n
+	$types[n] = DataType.new(n, *args)
+end
+
+# FIXME do proper parsing of cl_platform.h, with per-compiler definitions
+create_type(:cl_int,
+	    ["CL/cl_platform.h".intern, nil],
+	    nil, # actually depends
+	    'signed 32-bit integral type',
+	    4, 4, 0, nil)
+
+def add_value(type, name, val, comment)
+	t = type.to_sym
+	raise "no such type #{type}" unless $types.key? t
+	n = name.to_sym
+	v = val.to_sym
+	$types[t].values ||={}
+	$types[t].values[n] = [val, comment]
+end
+
+def add_field(type, name, ftype, comment)
+	t = type.to_sym
+	raise "no such type #{type}" unless $types.key? t
+	n = name.tp_sym
+	ft = ftype.to_sym
+	$types[t].struct ||={}
+	$types[t].struct[n] = [ft, comment]
+end
+
+File.open('/usr/include/CL/cl.h') do |f|
+	file = 'CL/cl.h'.intern
+	section = nil
+	datatype = nil
+	f.each_line do |line|
+		l = line.chomp
+		case l
+		when %r{^/\*\s+(.*?)\s+\*/$}
+			candidate = $1
+			candidate.sub!(/\s+- bitfield/,'')
+			# ugh, fix typos
+			candidate.sub!('qualifer','qualifier')
+			dt = candidate.intern
+			if candidate.match(/(\S+) reserved for (\S+)/)
+				add_value(datatype, $2, $1, 'reserved')
+			elsif $types.key? dt
+				datatype = dt
+				section = nil
+				puts "Defining values for '#{datatype}'"
+			else
+				datatype = nil
+				section = dt
+				puts "Entering section '#{section}'"
+			end
+		when %r{^typedef\s+(.*?)\s+(\S+);\s*(?:/\* (.*) \*/)?}
+			mapsto = $1.intern
+			name = $2.intern
+			comment = $3
+			origin = [file, section]
+			create_type(name, origin, mapsto, comment)
+			puts "Defined type '#{name}'"
+		when %r{#define (\S+)\s+(.*?)\s*(?:/\* (.*) \*/)?$}
+			key = $1.intern
+			value = $2
+			comment = $3
+			dt = datatype || :cl_int # TODO FIXME check for U, L etc suffixes
+			raise "define '#{key}' in section '#{section}' also has comment '#{comment}'" if section and comment
+			comment ||= section
+			add_value(dt, key, value, comment)
+		end
+	end
+end
+
+require 'pp'
+pp $types
