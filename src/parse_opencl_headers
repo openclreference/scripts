@@ -7,7 +7,7 @@ DataType = Struct.new(:name, # name of the type
 		      :size, # size, in bytes, of the data type
 		      :align, # alignment of the data type
 		      :vector, # if vector type, number of components
-		      :struct, # if struct, hash of member names => member types
+		      :struct, # if struct, array of [member names, member types, comment]
 		      :values, # hash of defined values it can take (name => [value, comment])
 		     )
 
@@ -38,20 +38,53 @@ end
 def add_field(type, name, ftype, comment)
 	t = type.to_sym
 	raise "no such type #{type}" unless $types.key? t
-	n = name.tp_sym
+	n = name.to_sym
 	ft = ftype.to_sym
-	$types[t].struct ||={}
-	$types[t].struct[n] = [ft, comment]
+	$types[t].struct ||= []
+	$types[t].struct << [n, ft, comment]
 end
 
+=begin
+From cl.h we want to extract three kinds of data:
+
+* data types (beyond the OpenCL versions of the POD types, which are defined in
+  `cl_platform.h` instead)
+* CL_* constants (error codes, flags, etc)
+* API functions
+
+The constants are only defined in single-line declarations starting with
+`#define`.
+Data types are defined either in single-line declarations starting with
+`typedef`, or (for `struct`s) as multi-line declarations starting with
+`typedef struct`.
+API functions are multi-line only, starting with `extern CL_API_ENTRY`.
+Finally, we we also parse comments that mark the beginning of sections in the
+header file.
+=end
 File.open('/usr/include/CL/cl.h') do |f|
 	file = 'CL/cl.h'.intern
 	section = nil
 	datatype = nil
+	typedef_struct = nil
 	f.each_line do |line|
 		l = line.chomp
+		if typedef_struct
+			raise "Incomplete `typedef #{typedef_struct}` on line #{f.lineno} of #{f.path}" if l.empty?
+			case l
+			when /^} (\S+);/
+				create_type($1.intern, [file, section], typedef_struct)
+				typedef_struct = nil
+			when /\s+(\S+)\s+(\S+);/
+				add_field(typedef_struct, $2, $1, nil)
+			else
+				raise "Unexpected line while parsing `typedef #{typedef_struct}` on line #{f.lineno} of #{f.path}"
+			end
+			next
+		end
 		case l
 		when %r{^/\*\s+(.*?)\s+\*/$}
+			# single-line comment marking either the beginning of a section,
+			# or a commented, reserved value for a define
 			candidate = $1
 			candidate.sub!(/\s+- bitfield/,'')
 			# ugh, fix typos
@@ -69,13 +102,23 @@ File.open('/usr/include/CL/cl.h') do |f|
 				puts "Entering section '#{section}'"
 			end
 		when %r{^typedef\s+(.*?)\s+(\S+);\s*(?:/\* (.*) \*/)?}
+			# single-line typedef
 			mapsto = $1.intern
 			name = $2.intern
 			comment = $3
 			origin = [file, section]
 			create_type(name, origin, mapsto, comment)
 			puts "Defined type '#{name}'"
+		when /^typedef (struct \S+) {$/
+			# begin of multi-line typedef
+			typedef_struct = $1.intern
+			create_type(typedef_struct,
+				    [file, section]);
+		when /^typedef/
+			# bug out if we meet some other kind of typedef
+			raise "Unknown `typedef` on line #{f.lineno} of #{f.path}"
 		when %r{#define (\S+)\s+(.*?)\s*(?:/\* (.*) \*/)?$}
+			# single-line define
 			key = $1.intern
 			value = $2
 			comment = $3
