@@ -11,12 +11,29 @@ DataType = Struct.new(:name, # name of the type
 		      :values, # hash of defined values it can take (name => [value, comment])
 		     )
 
+APICall = Struct.new(:name, # name of the API
+		      :origin, # defined where
+		      :deprecated, # if deprecated, version of deprecation
+					:return, # return type
+		      :params, # array fo paramters [type, name, comment]
+					:introduced, # version when it was introduced
+		     )
+
+
 $types = {}
+
+$apis = {}
 
 def create_type(name, *args)
 	n = name.to_sym
 	raise "redefining type #{n}" if $types.key? n
 	$types[n] = DataType.new(n, *args)
+end
+
+def create_api(name, *args)
+	n = name.to_sym
+	raise "redefining API #{n}" if $apis.key? n
+	$apis[n] = APICall.new(n, *args)
 end
 
 # FIXME do proper parsing of cl_platform.h, with per-compiler definitions
@@ -44,6 +61,15 @@ def add_field(type, name, ftype, comment)
 	$types[t].struct << [n, ft, comment]
 end
 
+def add_param(func, name, ptype, comment)
+	f = func.to_sym
+	raise "no such API call #{func}" unless $apis.key? f
+	n = name.to_sym
+	pt = ptype.to_sym
+	$apis[f].params ||= []
+	$apis[f].params << [n, pt, comment]
+end
+
 =begin
 From cl.h we want to extract three kinds of data:
 
@@ -61,13 +87,58 @@ API functions are multi-line only, starting with `extern CL_API_ENTRY`.
 Finally, we we also parse comments that mark the beginning of sections in the
 header file.
 =end
+
+MATCH_PARAM = %r{(?:const )?(?:unsigned )?\S+(?:\s*\*+)?}
 File.open('/usr/include/CL/cl.h') do |f|
 	file = 'CL/cl.h'.intern
 	section = nil
+
 	datatype = nil
 	typedef_struct = nil
+
+	return_type = nil
+	deprecation = nil
+	funcname = nil # API call name
+
 	f.each_line do |line|
 		l = line.chomp
+
+		if return_type or funcname
+			raise "Incomplete API call on line #{f.lineno} of #{f.path}" if l.empty?
+			case l
+			when %r{^([^(\s]+)\((?:void|\s*(#{MATCH_PARAM})\s+/\*\s*(\S+)\s*\*/)}
+				funcname = $1.intern
+				ptype = $2 ? $2.intern : nil
+				param = $2 ? $3.intern : nil
+				post = $'.strip
+				create_api(funcname, [file, section], deprecation, return_type, [])
+				return_type = nil
+				add_param(funcname, param, ptype, nil) if param
+				if post.match(/^\) (\S+);/)
+					$apis[funcname].introduced = $1
+					funcname = nil # done
+				end
+			when %r{^\s+(#{MATCH_PARAM})\s+/\*\s*(\S+)\s*\*/}
+				raise "Missing API call name on line #{f.lineno} of #{f.path}" unless funcname
+				ptype = $1.intern
+				param = $2.intern
+				post = $'.strip
+				add_param(funcname, param, ptype, nil)
+				if post.match(/^\)\s+(\S+);/)
+					$apis[funcname].introduced = $1
+					funcname = nil # done
+				end
+			when %r{^\s+(void\s+\(CL_CALLBACK\s*\*)\s+/\*\s*(pfn_notify|user_func)\s*\*/(\s*\)\(.*\))}
+				# TODO improve matching for this
+				param = $2.intern
+				ptype = ($1.dup + $3.dup).intern
+				add_param(funcname, param, ptype, 'callback function')
+			else
+				raise "Unexpected line while parsing API call on line #{f.lineno} of #{f.path}"
+			end
+			next
+		end
+
 		if typedef_struct
 			raise "Incomplete `typedef #{typedef_struct}` on line #{f.lineno} of #{f.path}" if l.empty?
 			case l
@@ -81,6 +152,7 @@ File.open('/usr/include/CL/cl.h') do |f|
 			end
 			next
 		end
+
 		case l
 		when %r{^/\*\s+(.*?)\s+\*/$}
 			# single-line comment marking either the beginning of a section,
@@ -126,9 +198,15 @@ File.open('/usr/include/CL/cl.h') do |f|
 			raise "define '#{key}' in section '#{section}' also has comment '#{comment}'" if section and comment
 			comment ||= section
 			add_value(dt, key, value, comment)
+		when /extern CL_API_ENTRY (\S+ )?(.*) CL_API_CALL/
+			# API
+			deprecation = $1 ? $1.strip : nil
+			return_type = $2
 		end
 	end
 end
 
 require 'pp'
 pp $types
+
+pp $apis
