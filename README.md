@@ -8,4 +8,4 @@ Currently available:
 * `parse_opencl_headers` to parse the official OpenCL headers and
   extract API types, functions and defines.
 
-[oclref]: http://openclreference.com "OpenCL Reference
+[oclref]: http://openclreference.com "OpenCL Reference"
