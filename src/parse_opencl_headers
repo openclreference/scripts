@@ -13,10 +13,10 @@ DataType = Struct.new(:name, # name of the type
 
 APICall = Struct.new(:name, # name of the API
 		      :origin, # defined where
+		      :introduced, # version when it was introduced
 		      :deprecated, # if deprecated, version of deprecation
-					:return, # return type
+		      :return, # return type
 		      :params, # array fo paramters [type, name, comment]
-					:introduced, # version when it was introduced
 		     )
 
 
@@ -84,7 +84,7 @@ Data types are defined either in single-line declarations starting with
 `typedef`, or (for `struct`s) as multi-line declarations starting with
 `typedef struct`.
 API functions are multi-line only, starting with `extern CL_API_ENTRY`.
-Finally, we we also parse comments that mark the beginning of sections in the
+Finally, we also parse comments that mark the beginning of sections in the
 header file.
 =end
 
