@@ -108,11 +108,28 @@ File.open('/usr/include/CL/cl.h') do |f|
 	deprecation = nil
 	funcname = nil # API call name
 
+	# multi-line callback
+	callback_param = nil
+	callback_pre = nil
+	callback_post = nil
+
 	f.each_line do |line|
 		l = line.chomp
 		if skipping_ifdef
 			# keep skipping until the #endif
 			skipping_ifdef = !l.start_with?('#endif')
+			next
+		end
+
+		if callback_param
+			callback_post += l.sub(/^\s+/, ' ')
+			if callback_post.sub!(/\),\s*/, ')')
+				ptype = (callback_pre + callback_post).gsub(/\s+/, ' ').intern
+				add_param(funcname, callback_param, ptype, 'callback function')
+				callback_param = nil
+				callback_pre = nil
+				callback_post = nil
+			end
 			next
 		end
 
@@ -141,11 +158,15 @@ File.open('/usr/include/CL/cl.h') do |f|
 					$apis[funcname].introduced = $1
 					funcname = nil # done
 				end
-			when %r{^\s+(void\s+\(CL_CALLBACK\s*\*)\s+/\*\s*(pfn_notify|user_func)\s*\*/(\s*\)\(.*\))}
+			when %r{^\s+(void\s+\(CL_CALLBACK\s*\*)\s+/\*\s*(pfn_[a-z_]+|user_func)\s*\*/(\s*\)\(.*\))}
 				# TODO improve matching for this
 				param = $2.intern
 				ptype = ($1.dup + $3.dup).intern
 				add_param(funcname, param, ptype, 'callback function')
+			when %r{^\s+(void\s+\(CL_CALLBACK\s*\*)\s+/\*\s*(pfn_[a-z_]+|user_func)\s*\*/(\s*\)\(.*)}
+				callback_param = $2.intern
+				callback_pre = $1.dup
+				callback_post = $3.dup
 			else
 				raise "Unexpected line while parsing API call on line #{f.lineno} of #{f.path}"
 			end
