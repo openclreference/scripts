@@ -48,6 +48,7 @@ def add_value(type, name, val, comment)
 	types.each do |tp|
 		t = tp.to_sym
 		raise "no such type #{tp}" unless $types.key? t
+		next if comment and comment.match(%r{used by (\S+) only}) and $1.intern != t
 		n = name.to_sym
 		v = val.to_sym
 		$types[t].values ||={}
