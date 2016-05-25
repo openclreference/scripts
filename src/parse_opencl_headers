@@ -94,7 +94,7 @@ Finally, we also parse comments that mark the beginning of sections in the
 header file.
 =end
 
-MATCH_PARAM = %r{(?:const )?(?:unsigned )?\S+(?:\s*\*+)?}
+MATCH_PARAM = %r{(?:const )?(?:unsigned )?\S+(?:\s*(?:\*+|\*?\[\]))?}
 File.open('/usr/include/CL/cl.h') do |f|
 	file = 'CL/cl.h'.intern
 	section = nil
