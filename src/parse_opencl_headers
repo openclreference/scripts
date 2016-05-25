@@ -142,7 +142,7 @@ File.open('/usr/include/CL/cl.h') do |f|
 				ptype = $2 ? $2.intern : nil
 				param = $2 ? $3.intern : nil
 				post = $'.strip
-				create_api(funcname, [file, section], deprecation, return_type, [])
+				create_api(funcname, [file, section], "", deprecation, return_type, [])
 				return_type = nil
 				add_param(funcname, param, ptype, nil) if param
 				if post.match(/^\) (\S+);/)
@@ -243,10 +243,10 @@ File.open('/usr/include/CL/cl.h') do |f|
 			raise "define '#{key}' in section '#{section}' also has comment '#{comment}'" if section and comment
 			comment ||= section
 			add_value(dt, key, value, comment)
-		when /extern CL_API_ENTRY (\S+ )?(.*) CL_API_CALL/
+		when /extern CL_API_ENTRY (\S+ )?(.+) CL_API_CALL/
 			# API
 			deprecation = $1 ? $1.strip : nil
-			return_type = $2
+			return_type = $2.dup
 		end
 	end
 end
