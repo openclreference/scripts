@@ -96,6 +96,7 @@ File.open('/usr/include/CL/cl.h') do |f|
 	datatype = nil
 	typedef_struct = nil
 	skipping_ifdef = false
+	union = nil # cl_image_desc has an union inside, survive it
 
 	return_type = nil
 	deprecation = nil
@@ -152,9 +153,14 @@ File.open('/usr/include/CL/cl.h') do |f|
 				create_type($1.intern, [file, section], typedef_struct)
 				typedef_struct = nil
 			when /\s+(\S+)\s+(\S+);/
-				add_field(typedef_struct, $2, $1, nil)
+				add_field(typedef_struct, $2, $1, union)
 			when /^#ifdef .*/
 				skipping_ifdef = true
+			when /^\s+union (\S+)?\s*{/
+				union = $1 ? "(union #{$1})" : "(anonymous union)"
+			when /^\s+};/
+				raise "Unexpected group end while parsing `typedef #{typedef_struct}` on line #{f.lineno} of #{f.path}" if !union
+				union = nil
 			else
 				raise "Unexpected line while parsing `typedef #{typedef_struct}` on line #{f.lineno} of #{f.path}"
 			end
