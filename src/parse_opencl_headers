@@ -44,21 +44,27 @@ create_type(:cl_int,
 	    4, 4, 0, nil)
 
 def add_value(type, name, val, comment)
-	t = type.to_sym
-	raise "no such type #{type}" unless $types.key? t
-	n = name.to_sym
-	v = val.to_sym
-	$types[t].values ||={}
-	$types[t].values[n] = [val, comment]
+	types = Array === type ? type : [type]
+	types.each do |tp|
+		t = tp.to_sym
+		raise "no such type #{tp}" unless $types.key? t
+		n = name.to_sym
+		v = val.to_sym
+		$types[t].values ||={}
+		$types[t].values[n] = [val, comment]
+	end
 end
 
 def add_field(type, name, ftype, comment)
-	t = type.to_sym
-	raise "no such type #{type}" unless $types.key? t
-	n = name.to_sym
-	ft = ftype.to_sym
-	$types[t].struct ||= []
-	$types[t].struct << [n, ft, comment]
+	types = Array === type ? type : [type]
+	types.each do |tp|
+		t = tp.to_sym
+		raise "no such type #{tp}" unless $types.key? t
+		n = name.to_sym
+		ft = ftype.to_sym
+		$types[t].struct ||= []
+		$types[t].struct << [n, ft, comment]
+	end
 end
 
 def add_param(func, name, ptype, comment)
@@ -175,16 +181,19 @@ File.open('/usr/include/CL/cl.h') do |f|
 			candidate.sub!(/\s+- bitfield/,'')
 			# ugh, fix typos
 			candidate.sub!('qualifer','qualifier')
-			dt = candidate.intern
+			dts = candidate.split(' and ').map { |s| s.intern }
 			if candidate.match(/(\S+) reserved for (\S+)/)
 				add_value(datatype, $2, $1, 'reserved')
-			elsif $types.key? dt
-				datatype = dt
+			elsif candidate.match(/reserved\s+(.*)/)
+				add_value(datatype, '(n/a)', $1, 'reserved')
+			elsif dts.inject(true) { |istype, dt| istype && ($types.key? dt) }
+				datatype = dts
 				section = nil
-				puts "Defining values for '#{datatype}'"
+				desc = dts.join("', '")
+				puts "Defining values for '#{desc}'"
 			else
 				datatype = nil
-				section = dt
+				section = candidate.intern
 				puts "Entering section '#{section}'"
 			end
 		when %r{^typedef\s+(.*?)\s+(\S+);\s*(?:/\* (.*) \*/)?}
