@@ -16,7 +16,7 @@ APICall = Struct.new(:name, # name of the API
 		      :introduced, # version when it was introduced
 		      :deprecated, # if deprecated, version of deprecation
 		      :return, # return type
-		      :params, # array fo paramters [type, name, comment]
+		      :params, # array of parameters [type, name, comment]
 		     )
 
 
@@ -95,6 +95,7 @@ File.open('/usr/include/CL/cl.h') do |f|
 
 	datatype = nil
 	typedef_struct = nil
+	skipping_ifdef = false
 
 	return_type = nil
 	deprecation = nil
@@ -102,6 +103,11 @@ File.open('/usr/include/CL/cl.h') do |f|
 
 	f.each_line do |line|
 		l = line.chomp
+		if skipping_ifdef
+			# keep skipping until the #endif
+			skipping_ifdef = !l.start_with?('#endif')
+			next
+		end
 
 		if return_type or funcname
 			raise "Incomplete API call on line #{f.lineno} of #{f.path}" if l.empty?
@@ -147,6 +153,8 @@ File.open('/usr/include/CL/cl.h') do |f|
 				typedef_struct = nil
 			when /\s+(\S+)\s+(\S+);/
 				add_field(typedef_struct, $2, $1, nil)
+			when /^#ifdef .*/
+				skipping_ifdef = true
 			else
 				raise "Unexpected line while parsing `typedef #{typedef_struct}` on line #{f.lineno} of #{f.path}"
 			end
